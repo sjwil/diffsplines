@@ -10,19 +10,28 @@ class EndCondition(Enum):
     CLOSED = 3
 
 
-def solve_cubic_coeffs(t, x, end_condition=EndCondition.NATURAL):
+def solve_cubic_coeffs(t, x, end_condition=EndCondition.NATURAL, **kwargs):
     # t: T_max or (..., length)
     # x: (..., length, channels)
     if len(t.size()) == 0:
         t = torch.linspace(0, t, x.shape[-2], device=x.device)
+    # Check v_begin and v_end for CLAMPED end conditions
+    if end_condition == EndCondition.CLAMPED:
+        if "v_begin" not in kwargs.keys() or "v_end" not in kwargs.keys():
+            raise ValueError("Missing v_begin or v_end in kwargs for clamped end condition")
+
     delta = (t[1:] - t[:-1]).unsqueeze(-1)
     delta_sq = delta ** 2
     delta_reciprocal = 1 / delta
     delta_reciprocal_sq = 1 / delta_sq
 
     # TODO: implement clamped and closed end conditions
-    first = (3 * (x[..., 1, :] - x[..., 0, :])).unsqueeze(-2)
-    last = (3 * (x[..., -1, :] - x[..., -2, :])).unsqueeze(-2)
+    if end_condition == EndCondition.NATURAL:
+        first = (3 * (x[..., 1, :] - x[..., 0, :])).unsqueeze(-2)
+        last = (3 * (x[..., -1, :] - x[..., -2, :])).unsqueeze(-2)
+    elif end_condition == EndCondition.CLAMPED:
+        first = torch.ones_like(x[..., 0, :]).unsqueeze(-2) * kwargs["v_begin"]
+        last = torch.ones_like(x[..., 0, :]).unsqueeze(-2) * kwargs["v_end"]
     # i - 1, i, i + 1
     rhs = 3 * (x[..., 1:-1, :] - x[..., :-2, :]) * delta_reciprocal_sq[:-1] + 3 * (x[..., 2:, :] - x[..., 1:-1, :]) * delta_reciprocal_sq[1:]
     rhs = torch.cat([first, rhs, last], dim=-2)
@@ -40,6 +49,10 @@ def solve_cubic_coeffs(t, x, end_condition=EndCondition.NATURAL):
         tridiagonal[..., 0, 1] = delta[0]
         tridiagonal[..., -1, -1] = 2 * delta[-1]
         tridiagonal[..., -1, -2] = delta[-1]
+    elif end_condition == EndCondition.CLAMPED:
+        tridiagonal[..., 0, 0] = 1
+        tridiagonal[..., -1, -1] = 1
+
     # TODO:: efficient tridiagonal solver
     xdot = torch.linalg.solve(tridiagonal, rhs)
     a = x[..., :-1, :]
