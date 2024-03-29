@@ -1,4 +1,4 @@
-# Design inspired by https://github.com/patrick-kidger/torchcubicspline
+# Some design elements inspired by https://github.com/patrick-kidger/torchcubicspline
 import torch
 from enum import Enum
 
@@ -13,36 +13,41 @@ class EndCondition(Enum):
 def solve_cubic_coeffs(t, x, end_condition=EndCondition.NATURAL):
     # t: T_max or (..., length)
     # x: (..., length, channels)
-    uniform = len(t.size()) == 0
-    if uniform:
-        # Note this rhs is specific to natural
-        first = (3 * (x[..., 1, :] - x[..., 0, :])).unsqueeze(-2)
-        last = (3 * (x[..., -1, :] - x[..., -2, :])).unsqueeze(-2)
-        rhs = 3 * (x[..., 2:, :] - x[..., :-2, :])
-        rhs = torch.cat([first, rhs, last], dim=-2)
-        # Setup tridiagonal
-        tridiagonal = torch.zeros(
-            (*x.shape[:-2], x.shape[-2], x.shape[-2]), device=x.device)
-        diag = torch.arange(0, x.shape[-2] - 1, 1, dtype=int)
-        tridiagonal[..., diag, diag] = 4
-        tridiagonal[..., diag + 1, diag] = 1
-        tridiagonal[..., diag, diag + 1] = 1
-        # Fix first and last row
-        if end_condition == EndCondition.NATURAL:
-            tridiagonal[..., 0, 0] = 2
-            tridiagonal[..., -1, -2] = 2
-        # TODO:: efficient tridiagonal solver
-        xdot = torch.linalg.solve(tridiagonal, rhs)
-        a = x[..., :-1, :]
-        b = xdot[..., :-1, :]
-        c = 3 * (x[..., 1:, :] - x[..., :-1, :]) - xdot[..., 1:, :] - 2 * xdot[..., :-1, :]
-        d = 2 * (x[..., :-1, :] - x[..., 1:, :]) + xdot[..., 1:, :] + xdot[..., :-1, :]
+    if len(t.size()) == 0:
+        t = torch.linspace(0, t, x.shape[-2], device=x.device)
+    delta = (t[1:] - t[:-1]).unsqueeze(-1)
+    delta_sq = delta ** 2
+    delta_reciprocal = 1 / delta
+    delta_reciprocal_sq = 1 / delta_sq
 
-        # TODO: Currently assumes unit time between each endpoint
-        t = torch.linspace(0, x.shape[0] - 1, x.shape[0], device=x.device)
-        return t, a, b, c, d
-    else:
-        raise NotImplementedError("Not implemented!")
+    # TODO: implement clamped and closed end conditions
+    first = (3 * (x[..., 1, :] - x[..., 0, :])).unsqueeze(-2)
+    last = (3 * (x[..., -1, :] - x[..., -2, :])).unsqueeze(-2)
+    # i - 1, i, i + 1
+    rhs = 3 * (x[..., 1:-1, :] - x[..., :-2, :]) * delta_reciprocal_sq[:-1] + 3 * (x[..., 2:, :] - x[..., 1:-1, :]) * delta_reciprocal_sq[1:]
+    rhs = torch.cat([first, rhs, last], dim=-2)
+    # Setup tridiagonal
+    tridiagonal = torch.zeros(
+        (*x.shape[:-2], x.shape[-2], x.shape[-2]), device=x.device)
+    diag = torch.arange(0, x.shape[-2], 1, dtype=int)
+    tridiagonal[..., diag[1:-1], diag[1:-1]] = 2 * delta_reciprocal[:-1, 0] + 2 * delta_reciprocal[1:, 0]
+    tridiagonal[..., diag[1:-1], diag[2:]] = delta_reciprocal[:-1, 0]
+    tridiagonal[..., diag[1:-1], diag[:-2]] = delta_reciprocal[1:, 0]
+
+    # Fix first and last row
+    if end_condition == EndCondition.NATURAL:
+        tridiagonal[..., 0, 0] = 2 * delta[0]
+        tridiagonal[..., 0, 1] = delta[0]
+        tridiagonal[..., -1, -1] = 2 * delta[-1]
+        tridiagonal[..., -1, -2] = delta[-1]
+    # TODO:: efficient tridiagonal solver
+    xdot = torch.linalg.solve(tridiagonal, rhs)
+    a = x[..., :-1, :]
+    b = xdot[..., :-1, :]
+    c = 3 * (x[..., 1:, :] - x[..., :-1, :]) * delta_reciprocal_sq - xdot[..., 1:, :] * delta_reciprocal - 2 * xdot[..., :-1, :] * delta_reciprocal
+    d = 2 * (x[..., :-1, :] - x[..., 1:, :]) * delta_reciprocal * delta_reciprocal_sq + xdot[..., 1:, :] * delta_reciprocal_sq + xdot[..., :-1, :] * delta_reciprocal_sq
+
+    return t, a, b, c, d
 
 
 class CubicSpline:
@@ -63,17 +68,18 @@ class CubicSpline:
     def position(self, times):
         fractional_part, index = self._times_to_indices(times)
         fractional_part = fractional_part.unsqueeze(-1)
-
         return self.a[..., index, :] + self.b[..., index, :] * fractional_part + \
             self.c[..., index, :] * fractional_part ** 2 + \
             self.d[..., index, :] * fractional_part ** 3
 
     def velocity(self, times):
         fractional_part, index = self._times_to_indices(times)
+        fractional_part = fractional_part.unsqueeze(-1)
         return self.b[..., index, :] + \
             2 * self.c[..., index, :] * fractional_part + \
             3 * self.d[..., index, :] * fractional_part ** 2
 
     def acceleration(self, times):
         fractional_part, index = self._times_to_indices(times)
+        fractional_part = fractional_part.unsqueeze(-1)
         return 2 * self.c[..., index, :] + 6 * self.d[..., index, :] * fractional_part
