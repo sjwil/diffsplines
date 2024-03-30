@@ -75,8 +75,8 @@ class CubicTestCase(unittest.TestCase):
         # 5 splines, 5 points (4 polynomials), 3 dim
         x = torch.rand([5, 5, 3], device=self.device) * 10
         # t = torch.tensor([0., 1, 2, 3.5, 4.], device=self.device)
-        t = torch.tensor(4., device=self.device)
-        coeffs = cubic.solve_cubic_coeffs(t, x, end_condition=cubic.EndCondition.CLOSED, t_closed=1.)
+        t = torch.tensor(5., device=self.device)
+        coeffs = cubic.solve_cubic_coeffs(t, x, end_condition=cubic.EndCondition.CLOSED)
         spline = cubic.CubicSpline(coeffs)
         # Spline is interpolating
         t = torch.tensor([0., 1., 2., 3., 4.], device=self.device)
