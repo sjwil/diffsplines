@@ -71,3 +71,13 @@ class CubicTestCase(unittest.TestCase):
         # Spline is continuously differentiable
         self.assertAlmostEqual(torch.linalg.norm(xtdotplus1[..., :-1, :] - b[..., 1:, :]).detach().cpu().item(), 0, 4)
 
+    def test_closed_coeffs(self):
+        # 5 splines, 5 points (4 polynomials), 3 dim
+        x = torch.rand([5, 5, 3], device=self.device) * 10
+        # t = torch.tensor([0., 1, 2, 3.5, 4.], device=self.device)
+        t = torch.tensor(4., device=self.device)
+        coeffs = cubic.solve_cubic_coeffs(t, x, end_condition=cubic.EndCondition.CLOSED, t_closed=1.)
+        spline = cubic.CubicSpline(coeffs)
+        # Spline is interpolating
+        t = torch.tensor([0., 1., 2., 3., 4.], device=self.device)
+        self.assertAlmostEqual(torch.linalg.norm(spline.position(t) - x).detach().cpu().item(), 0, 4)
