@@ -152,3 +152,9 @@ class CubicTestCase(unittest.TestCase):
         # Spline loop point is continuously differentiable
         self.assertAlmostEqual(norm_diff(xtdotplus1[..., -1, :], b[..., loop_index, :]), 0, 4)
 
+        # Spline should loop to the same position on each t here
+        # Period of the looping segment is 3
+        periodic_t = torch.linspace(2., 32., 11)
+        spline = cubic.CubicSpline(coeffs, loop_index=loop_index)
+        pos = spline.position(periodic_t)
+        self.assertAlmostEqual(norm_diff(pos, pos[:, 0].unsqueeze(-2)), 0, 4)

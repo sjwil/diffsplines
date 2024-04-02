@@ -127,18 +127,39 @@ def solve_cubic_coeffs(t, x, end_condition=EndCondition.NATURAL, **kwargs):
 
 
 class CubicSpline:
-    def __init__(self, coeffs):
+    def __init__(self, coeffs, loop_index=None):
         t, a, b, c, d = coeffs
         self.t = t
         self.a = a
         self.b = b
         self.c = c
         self.d = d
+        self.loop_index = loop_index
+        if self.loop_index is not None:
+            self.loop_t = (t - t[loop_index])[loop_index:]
 
     def _times_to_indices(self, times):
         index = torch.bucketize(times, self.t, right=True) - 1
-        index = index.clamp(0, self.a.size(-2) - 1)
+
+        if self.loop_index is not None:
+            index = index.clamp_min(0)
+            # For each time, where in the looping segment would it be
+            loop_index = torch.bucketize(
+                (times - self.t[-1]) % self.loop_t[-1], self.loop_t, right=True) - 1
+            # Which indices are actually in the looping segment
+            looping_indices = index > self.a.size(-2) - 1
+            # Reset looping indices to correct index
+            index[looping_indices] = loop_index[looping_indices] + self.loop_index
+
+        else:
+            index = index.clamp(0, self.a.size(-2) - 1)
+
         fractional_part = times - self.t[index]
+
+        if self.loop_index is not None:
+            # How far we are in the current loop
+            fractional_part[looping_indices] = (
+                (times[looping_indices] - self.t[-1]) % self.loop_t[-1]) - self.loop_t[loop_index[looping_indices]]
         return fractional_part, index
 
     def position(self, times):
