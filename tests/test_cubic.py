@@ -109,13 +109,13 @@ class CubicTestCase(unittest.TestCase):
         self.assertAlmostEqual(torch.linalg.norm(
             xtdotplus1[..., :-1, :] - b[..., 1:, :]).detach().cpu().item(), 0, 4)
 
-    def test_looping_coeffs(self):
+    def test_lasso_coeffs(self):
         # 5 splines, 5 points (4 polynomials), 3 dim
         x = torch.rand([5, 5, 3], device=self.device) * 10
         t = torch.tensor([0., 1, 2, 3.5, 4., 5.], device=self.device)
 
         coeffs = cubic.solve_cubic_coeffs(
-            t, x, end_condition=cubic.EndCondition.LOOPING, loop_index=0)
+            t, x, end_condition=cubic.EndCondition.LASSO, loop_index=0)
         closed_coeffs = cubic.solve_cubic_coeffs(
             t, x, end_condition=cubic.EndCondition.CLOSED)
 
@@ -124,7 +124,7 @@ class CubicTestCase(unittest.TestCase):
 
         def norm_diff(c1, c2): return torch.linalg.norm(
             c1 - c2).detach().cpu().item()
-        # Looping and Closed splines should coincide when loop_index = 0
+        # lasso and Closed splines should coincide when loop_index = 0
         self.assertAlmostEqual(norm_diff(a, c_a), 0)
         self.assertAlmostEqual(norm_diff(b, c_b), 0)
         self.assertAlmostEqual(norm_diff(c, c_c), 0)
@@ -132,7 +132,7 @@ class CubicTestCase(unittest.TestCase):
 
         loop_index = 2
         coeffs = cubic.solve_cubic_coeffs(
-            t, x, end_condition=cubic.EndCondition.LOOPING, loop_index=loop_index)
+            t, x, end_condition=cubic.EndCondition.LASSO, loop_index=loop_index)
 
         t, a, b, c, d = coeffs
         delta = (t[1:] - t[:-1]).unsqueeze(-1)
@@ -153,8 +153,8 @@ class CubicTestCase(unittest.TestCase):
         self.assertAlmostEqual(norm_diff(xtdotplus1[..., -1, :], b[..., loop_index, :]), 0, 4)
 
         # Spline should loop to the same position on each t here
-        # Period of the looping segment is 3
-        periodic_t = torch.linspace(2., 32., 11)
+        # Period of the lasso segment is 3
+        periodic_t = torch.linspace(2., 32., 11, device=self.device)
         spline = cubic.CubicSpline(coeffs, loop_index=loop_index)
         pos = spline.position(periodic_t)
         self.assertAlmostEqual(norm_diff(pos, pos[:, 0].unsqueeze(-2)), 0, 4)
