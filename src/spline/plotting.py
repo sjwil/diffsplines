@@ -8,15 +8,19 @@ from matplotlib.patches import Circle
 
 from . import cubic
 
-def plot_2d_trajectory(coeffs, points=200):
+def plot_2d_trajectory(coeffs, ax=None, points=200, **kwargs):
     t, a, b, c, d = coeffs
     eval_t = torch.linspace(t[0], t[-1], points, device=t.device)
-    spline = cubic.CubicSpline(coeffs)
+    spline = cubic.CubicSpline(coeffs, **kwargs)
     trajectory = spline.position(eval_t).detach().cpu().numpy()
 
-    plt.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+    if ax is not None:
+        ax.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+    else:
+        plt.plot(trajectory[..., :, 0], trajectory[..., :, 1])
 
-def generate_figure(coeffs, t, plot_idx, axes, goals=None, circleRadius=None):
+
+def generate_figure(coeffs, t, plot_idx, axes, goals=None, circleRadius=None, **kwargs):
     # Coeffs: spline coeffs (t, a, b, c, d)
     # t: times to evaluate spline position
     # plot_idx: time indices to plot the spline position
@@ -24,7 +28,7 @@ def generate_figure(coeffs, t, plot_idx, axes, goals=None, circleRadius=None):
     # goals: optional goal point to display for each spline
     # circleRadius: optional radius of circle around the current spline position
 
-    spline = cubic.CubicSpline(coeffs)
+    spline = cubic.CubicSpline(coeffs, **kwargs)
     # shape (..., m, d) for length m and dim d 
     trajectory = spline.position(t).detach().cpu().numpy()
     trajectory.reshape(-1, *trajectory.shape[-2:])
