@@ -9,8 +9,8 @@ class BezierTestCase(unittest.TestCase):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     def test_uniform_spline(self):
-        # 5 splines, 4 segments, cubic, 3 dimensional
-        x = torch.rand([5, 5, 2, 3], device=self.device) * 10
+        # 5 splines, 4 segments, cubic, 2 dimensional
+        x = torch.rand([5, 5, 2, 2], device=self.device) * 10
         t = torch.tensor(4, device=self.device)
         times = torch.linspace(0, 4, 5, device=self.device)
 
@@ -32,7 +32,7 @@ class BezierTestCase(unittest.TestCase):
 
         # Spline is continuous
         self.assertAlmostEqual(torch.linalg.norm(
-            spline.position(times[1:] - 0.000001) - x[:, :-1, 0, :]).detach().cpu().item(), 0, 3)
+            spline.position(times[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 3)
 
         # Spline is continuously differentiable
         self.assertAlmostEqual(torch.linalg.norm(spline.velocity(

@@ -14,12 +14,13 @@ class BezierSpline:
         else:
             self.t = t
         # Here's where we assume order >= 3
-        diffs = control_points[..., -2, :] - control_points[..., -1, :]
+        diffs = 2 * control_points[..., 1:, -2,
+                                   :] - control_points[..., 1:, -1, :]
         # create (..., length, order + 1, channels) shape for full representation.
         # Would need to programatically create more diffs and append more to this if we want higher
         # order continuity
         self.control_points = torch.cat([control_points[..., :-1, :, :],
-                                         diffs[..., 1:, :].unsqueeze(-2),
+                                         diffs.unsqueeze(-2),
                                          control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
 
         self.d_control_points = (self.control_points.shape[-2] - 1) * (
@@ -80,9 +81,8 @@ class BezierSpline:
 
         # TODO: Fix for non-uniform
         res = self.vel_binom * \
-            torch.pow(1 - fractional_part, self.k - self.i_[:-1]) * \
+            torch.pow(1 - fractional_part, self.k - self.i_[1:]) * \
             torch.pow(fractional_part, self.i_[:-1])
-
         res = res.unsqueeze(-1)
         result = torch.sum(
             self.d_control_points[..., index, :, :] * res, dim=-2)
@@ -93,7 +93,7 @@ class BezierSpline:
         fractional_part = fractional_part.unsqueeze(-1)
 
         res = self.acc_binom * \
-            torch.pow(1 - fractional_part, self.k - self.i_[:-2]) * \
+            torch.pow(1 - fractional_part, self.k - self.i_[2:]) * \
             torch.pow(fractional_part, self.i_[:-2])
 
         res = res.unsqueeze(-1)
