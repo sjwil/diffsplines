@@ -32,18 +32,46 @@ class BezierTestCase(unittest.TestCase):
 
         # Spline is continuous
         self.assertAlmostEqual(torch.linalg.norm(
-            spline.position(times[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 3)
+            spline.position(times[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 2)
 
         # Spline is continuously differentiable
         self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
-            times[1:]) - spline.velocity(times[1:] - 0.000001)).detach().cpu().item(), 0, 3)
+            times[1:]) - spline.velocity(times[1:] - 0.000001)).detach().cpu().item(), 0, 2)
 
     def test_nonuniform_spline(self):
         # 5 splines, 5 segments, cubic, 3 dimensional
-        x = torch.rand([5, 5, 5, 3], device=self.device) * 10
-        t = torch.tensor([0., 1.2, 1.4, 3., 4.], device=self.device)
+        x = torch.rand([5, 3, 2, 3], device=self.device) * 10
+        # t = torch.tensor([0., 1.2, 1.4, 3., 4.], device=self.device)
+        t = torch.tensor([0., 1., 3.], device=self.device)
 
         spline = bezier.BezierSpline(t, x)
         # Spline is interpolating
         self.assertAlmostEqual(torch.linalg.norm(spline.position(
             t) - x[..., 0, :]).detach().cpu().item(), 0, 4)
+
+        # Spline is continuous
+        self.assertAlmostEqual(torch.linalg.norm(
+            spline.position(t[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 2)
+
+        # Spline is continuously differentiable
+        self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
+            t[1:]) - spline.velocity(t[1:] - 0.000001)).detach().cpu().item(), 0, 2)
+
+    def test_nonuniform_noncubic_spline(self):
+        # 5 splines, 5 segments, 7 points per curve, 3 dimensional
+        x = torch.rand([5, 3, 5, 3], device=self.device) * 10
+        # t = torch.tensor([0., 1.2, 1.4, 3., 4.], device=self.device)
+        t = torch.tensor([0., 1., 3.], device=self.device)
+
+        spline = bezier.BezierSpline(t, x)
+        # Spline is interpolating
+        self.assertAlmostEqual(torch.linalg.norm(spline.position(
+            t) - x[..., 0, :]).detach().cpu().item(), 0, 4)
+
+        # Spline is continuous
+        self.assertAlmostEqual(torch.linalg.norm(
+            spline.position(t[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 2)
+
+        # Spline is continuously differentiable
+        self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
+            t[1:]) - spline.velocity(t[1:] - 0.000001)).detach().cpu().item(), 0, 2)

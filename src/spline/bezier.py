@@ -10,12 +10,14 @@ class BezierSpline:
         # so control_points does not need to provide the last two per points
         # curve.
         if t.dim() == 0:
-            self.t = torch.linspace(0, t, control_points.shape[-3])
+            self.t = torch.linspace(
+                0, t, control_points.shape[-3], device=control_points.device)
         else:
             self.t = t
+        self.t_diffs = self.t[1:] - self.t[:-1]
         # Here's where we assume order >= 3
-        diffs = 2 * control_points[..., 1:, -2,
-                                   :] - control_points[..., 1:, -1, :]
+        diffs = (2 * control_points[..., 1:, -2,
+                                   :] - control_points[..., 1:, -1, :])
         # create (..., length, order + 1, channels) shape for full representation.
         # Would need to programatically create more diffs and append more to this if we want higher
         # order continuity
@@ -28,8 +30,10 @@ class BezierSpline:
         self.d2_control_points = (self.control_points.shape[-2] - 2) * (
             self.d_control_points[..., 1:, :] - self.d_control_points[..., :-1, :])
 
-        self.k = torch.tensor(self.control_points.shape[-2] - 1)
-        self.i_ = torch.tensor(range(self.control_points.shape[-2]))
+        self.k = torch.tensor(
+            self.control_points.shape[-2] - 1, device=control_points.device)
+        self.i_ = torch.tensor(
+            range(self.control_points.shape[-2]), device=control_points.device)
 
         self.loop_index = loop_index
         # Precompute binomial coefficients
@@ -63,10 +67,9 @@ class BezierSpline:
 
     def position(self, times):
         fractional_part, index = self._times_to_indices(times)
-        fractional_part = fractional_part.unsqueeze(-1)
+        fractional_part = (fractional_part / self.t_diffs[index]).unsqueeze(-1)
 
         # times x order + 1
-        # TODO: Fix for non-uniform
         res = self.pos_binom * \
             torch.pow(1 - fractional_part, self.k - self.i_) * \
             torch.pow(fractional_part, self.i_)
@@ -77,9 +80,8 @@ class BezierSpline:
 
     def velocity(self, times):
         fractional_part, index = self._times_to_indices(times)
-        fractional_part = fractional_part.unsqueeze(-1)
+        fractional_part = (fractional_part / self.t_diffs[index]).unsqueeze(-1)
 
-        # TODO: Fix for non-uniform
         res = self.vel_binom * \
             torch.pow(1 - fractional_part, self.k - self.i_[1:]) * \
             torch.pow(fractional_part, self.i_[:-1])
@@ -90,7 +92,7 @@ class BezierSpline:
 
     def acceleration(self, times):
         fractional_part, index = self._times_to_indices(times)
-        fractional_part = fractional_part.unsqueeze(-1)
+        fractional_part = (fractional_part / self.t_diffs[index]).unsqueeze(-1)
 
         res = self.acc_binom * \
             torch.pow(1 - fractional_part, self.k - self.i_[2:]) * \
