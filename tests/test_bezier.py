@@ -40,9 +40,8 @@ class BezierTestCase(unittest.TestCase):
 
     def test_nonuniform_spline(self):
         # 5 splines, 5 segments, cubic, 3 dimensional
-        x = torch.rand([5, 3, 2, 3], device=self.device) * 10
-        # t = torch.tensor([0., 1.2, 1.4, 3., 4.], device=self.device)
-        t = torch.tensor([0., 1., 3.], device=self.device)
+        x = torch.rand([5, 6, 2, 3], device=self.device) * 10
+        t = torch.tensor([0., 1., 3., 5., 5.5, 5.7], device=self.device)
 
         spline = bezier.BezierSpline(t, x)
         # Spline is interpolating
@@ -58,9 +57,8 @@ class BezierTestCase(unittest.TestCase):
             t[1:]) - spline.velocity(t[1:] - 0.000001)).detach().cpu().item(), 0, 2)
 
     def test_nonuniform_noncubic_spline(self):
-        # 5 splines, 5 segments, 7 points per curve, 3 dimensional
+        # 5 splines, 2 segments, 7 points per curve, 3 dimensional
         x = torch.rand([5, 3, 5, 3], device=self.device) * 10
-        # t = torch.tensor([0., 1.2, 1.4, 3., 4.], device=self.device)
         t = torch.tensor([0., 1., 3.], device=self.device)
 
         spline = bezier.BezierSpline(t, x)

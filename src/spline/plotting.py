@@ -7,6 +7,8 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Circle
 
 from . import cubic
+from . import bezier
+
 
 def plot_2d_trajectory(coeffs, ax=None, points=200, **kwargs):
     t, a, b, c, d = coeffs
@@ -14,6 +16,16 @@ def plot_2d_trajectory(coeffs, ax=None, points=200, **kwargs):
     spline = cubic.CubicSpline(coeffs, **kwargs)
     trajectory = spline.position(eval_t).detach().cpu().numpy()
 
+    if ax is not None:
+        ax.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+    else:
+        plt.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+
+
+def plot_2d_bezier(t, control_points, ax=None, points=200, **kwargs):
+    eval_t = torch.linspace(t[0], t[-1], points, device=t.device)
+    spline = bezier.BezierSpline(t, control_points, **kwargs)
+    trajectory = spline.position(eval_t).detach().cpu().numpy()
     if ax is not None:
         ax.plot(trajectory[..., :, 0], trajectory[..., :, 1])
     else:
@@ -29,7 +41,7 @@ def generate_figure(coeffs, t, plot_idx, axes, goals=None, circleRadius=None, **
     # circleRadius: optional radius of circle around the current spline position
 
     spline = cubic.CubicSpline(coeffs, **kwargs)
-    # shape (..., m, d) for length m and dim d 
+    # shape (..., m, d) for length m and dim d
     trajectory = spline.position(t).detach().cpu().numpy()
     trajectory.reshape(-1, *trajectory.shape[-2:])
 
@@ -38,13 +50,13 @@ def generate_figure(coeffs, t, plot_idx, axes, goals=None, circleRadius=None, **
     n_splines = trajectory.shape[0]
     cmap = matplotlib.colormaps["tab10"]
     colors = [cmap(index) for index in torch.linspace(0, 1, n_splines)]
-    
+
     # TODO: Expand projection to choose axes to plot
     projection = "2d" if (trajectory.shape[-1] == 2) else "3d"
 
     if type(axes) != list:
         axes = [axes]
-        
+
     for i, axis in enumerate(axes):
         # draw appropriate index and line to that index
         if projection == "2d":
