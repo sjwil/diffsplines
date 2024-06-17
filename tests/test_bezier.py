@@ -36,9 +36,15 @@ class BezierTestCase(unittest.TestCase):
         self.assertAlmostEqual(torch.linalg.norm(
             spline.position(times[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 2)
 
+        self.assertAlmostEqual(bezier.c0_violation(
+            spline).detach().cpu().item(), 0)
+
         # Spline is continuously differentiable
         self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
             times[1:]) - spline.velocity(times[1:] - 0.000001)).detach().cpu().item(), 0, 2)
+
+        self.assertAlmostEqual(bezier.c1_violation(
+            spline).detach().cpu().item(), 0, 4)
 
     def test_nonuniform_spline(self):
         # 5 splines, 5 segments, cubic, 3 dimensional
@@ -55,9 +61,15 @@ class BezierTestCase(unittest.TestCase):
         self.assertAlmostEqual(torch.linalg.norm(
             spline.position(t[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 2)
 
+        self.assertAlmostEqual(bezier.c0_violation(
+            spline).detach().cpu().item(), 0)
+
         # Spline is continuously differentiable
         self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
             t[1:]) - spline.velocity(t[1:] - 0.000001)).detach().cpu().item(), 0, 2)
+
+        self.assertAlmostEqual(bezier.c1_violation(
+            spline).detach().cpu().item(), 0, 4)
 
     def test_nonuniform_noncubic_spline(self):
         # 5 splines, 2 segments, 7 points per curve, 3 dimensional

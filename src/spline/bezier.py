@@ -107,3 +107,16 @@ def adapt_c1_bezier(control_points):
     # create (..., length, order, channels) shape for full representation.
     return torch.cat([control_points[..., :-1, :, :], diffs.unsqueeze(-2),
                       control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
+
+
+def c0_violation(spline):
+    return torch.norm(spline.control_points[..., 1:, 0, :] - spline.control_points[..., :-1, -1, :])
+
+
+def c1_violation(spline):
+    return torch.norm((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
+                      (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :]))
+
+
+def c0_c1_violation(spline):
+    return torch.stack([c0_violation(spline), c1_violation(spline)])
