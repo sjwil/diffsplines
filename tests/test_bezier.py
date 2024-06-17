@@ -11,10 +11,12 @@ class BezierTestCase(unittest.TestCase):
     def test_uniform_spline(self):
         # 5 splines, 4 segments, cubic, 2 dimensional
         x = torch.rand([5, 5, 2, 2], device=self.device) * 10
+        control_points = bezier.adapt_c1_bezier(x)
+
         t = torch.tensor(4, device=self.device)
         times = torch.linspace(0, 4, 5, device=self.device)
 
-        spline = bezier.BezierSpline(t, x)
+        spline = bezier.BezierSpline(t, control_points)
         # Spline is interpolating
         self.assertAlmostEqual(torch.linalg.norm(spline.position(
             times) - x[..., 0, :]).detach().cpu().item(), 0, 4)
@@ -41,9 +43,10 @@ class BezierTestCase(unittest.TestCase):
     def test_nonuniform_spline(self):
         # 5 splines, 5 segments, cubic, 3 dimensional
         x = torch.rand([5, 6, 2, 3], device=self.device) * 10
+        control_points = bezier.adapt_c1_bezier(x)
         t = torch.tensor([0., 1., 3., 5., 5.5, 5.7], device=self.device)
 
-        spline = bezier.BezierSpline(t, x)
+        spline = bezier.BezierSpline(t, control_points)
         # Spline is interpolating
         self.assertAlmostEqual(torch.linalg.norm(spline.position(
             t) - x[..., 0, :]).detach().cpu().item(), 0, 4)
@@ -59,9 +62,10 @@ class BezierTestCase(unittest.TestCase):
     def test_nonuniform_noncubic_spline(self):
         # 5 splines, 2 segments, 7 points per curve, 3 dimensional
         x = torch.rand([5, 3, 5, 3], device=self.device) * 10
+        control_points = bezier.adapt_c1_bezier(x)
         t = torch.tensor([0., 1., 3.], device=self.device)
 
-        spline = bezier.BezierSpline(t, x)
+        spline = bezier.BezierSpline(t, control_points)
         # Spline is interpolating
         self.assertAlmostEqual(torch.linalg.norm(spline.position(
             t) - x[..., 0, :]).detach().cpu().item(), 0, 4)

@@ -5,25 +5,19 @@ from spline.utils import torch_binomial
 class BezierSpline:
     def __init__(self, t, control_points, loop_index=None):
         # t: T_max or tensor (..., length)
-        # control_points: tensor (..., length + 1, order - 1, channels).
-        # Currently assumes order >= 3. This class constructs C^1 bezier splines
-        # so control_points does not need to provide the last two per points
-        # curve.
+        # control_points: tensor (..., length + 1, order + 1, channels).
+        # Currently assumes order >= 3. This class constructs C^0 bezier splines
+        # so control_points does not need to provide the last point per curve.
         if t.dim() == 0:
             self.t = torch.linspace(
-                0, t, control_points.shape[-3], device=control_points.device)
+                0, t, control_points.shape[-3] + 1, device=control_points.device)
         else:
             self.t = t
         self.t_diffs = self.t[1:] - self.t[:-1]
-        # Here's where we assume order >= 3
-        diffs = (2 * control_points[..., 1:, -2,
-                                   :] - control_points[..., 1:, -1, :])
-        # create (..., length, order + 1, channels) shape for full representation.
-        # Would need to programatically create more diffs and append more to this if we want higher
-        # order continuity
-        self.control_points = torch.cat([control_points[..., :-1, :, :],
-                                         diffs.unsqueeze(-2),
-                                         control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
+        self.control_points = control_points
+        # Fix c0 continuity
+        # self.control_points = torch.cat([control_points[..., :-1, :, :],
+        #                                  control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
 
         self.d_control_points = (self.control_points.shape[-2] - 1) * (
             self.control_points[..., 1:, :] - self.control_points[..., :-1, :])
@@ -102,3 +96,14 @@ class BezierSpline:
         result = torch.sum(
             self.d2_control_points[..., index, :, :] * res, dim=-2)
         return result
+
+
+def adapt_c1_bezier(control_points):
+    # control_points: tensor (..., length + 1, order - 1, channels)
+    # Appends an additional control point to each curve to ensure c1 continuity
+    # through knots.
+    diffs = (2 * control_points[..., 1:, -2,
+                                :] - control_points[..., 1:, -1, :])
+    # create (..., length, order, channels) shape for full representation.
+    return torch.cat([control_points[..., :-1, :, :], diffs.unsqueeze(-2),
+                      control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
