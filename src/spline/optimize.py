@@ -10,20 +10,15 @@ def null_fn_(x):
 def dual(spline, cost_fn, c, equality_fn=null_fn_, eq_multipliers=0, ineq_fn=null_fn_, ineq_multipliers=0):
     # This dual function is actually smooth even though there is a
     # torch.maximum
-
     return cost_fn(spline) + eq_multipliers @ equality_fn(spline) + 0.5 * c * \
         (torch.sum(torch.clamp(ineq_multipliers + c * ineq_fn(spline), 0, None)
          ** 2 - ineq_multipliers ** 2) + torch.norm(equality_fn(spline)) ** 2)
 
 
-def merit(x, eq_mult, ineq_mult, dx, deq_mult, dineq_mult, gamma, c):
-    # zero = torch.tensor(0)
-
+def merit(spline, cost_fn, c, equality_fn, eq_mult, ineq_fn, ineq_mult, dx, deq_mult, dineq_mult, gamma):
     return 0.5 * (torch.norm(dx) ** 2 + torch.norm(deq_mult) ** 2 +
-                  torch.norm(dineq_mult) ** 2)
-    # TODO: amend to include cost lagrangian value
-    # + \
-    #     γ * (f(x) + λ @ h(x) + torch.sum(torch.maximum(zero, μ + c * g(x))))
+                  torch.norm(dineq_mult) ** 2) + gamma * (cost_fn(spline) + eq_mult @ equality_fn(spline) +
+                                                          torch.sum(torch.clamp(ineq_mult + c * ineq_fn(spline), 0, None)))
 
 
 def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, inequality_fn=null_fn_, **kwargs):
@@ -41,17 +36,21 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
     # constraint violation penalty
     c = kwargs.get("c", 1.)
     # Additional weight on merit function on lagrangian value
-    gamma = kwargs.get("gamma", 0.5)
+    gamma = kwargs.get("gamma", 2.)
     # Maximum constraint violation penalty, used as stopping criteria
-    max_c = kwargs.get("max_c", 1000)
+    max_c = kwargs.get("max_c", 1e4)
     # Maximum step size
     max_alpha = kwargs.get("max_alpha", 1.)
     # Minimum step size, increase constraint penalty if unable to improve merit with a step larger than alpha
-    min_alpha = kwargs.get("min_alpha", 1e-3)
+    min_alpha = kwargs.get("min_alpha", 1e-6)
     # Maximum number of iterations
     max_iters = kwargs.get("max_iters", int(1e4))
     # Index the spline loops back on, default no loop.
     loop_index = kwargs.get("loop_index", None)
+    # Whether the bezier spline will be adapted to enforce c0 continuity
+    enforce_c0 = kwargs.get("enforce_c0", True)
+    # Maximum gradient abs
+    max_grad = kwargs.get("max_grad", 10.)
 
     data = {}
     x_traj = []
@@ -62,8 +61,13 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
             coeffs = cubic.solve_cubic_coeffs(t, x, **kwargs)
             return cubic.CubicSpline(coeffs, loop_index)
     elif spline_type == "bezier":
-        def fit_spline(t, x):
-            return bezier.BezierSpline(t, x, loop_index)
+        if enforce_c0:
+            def fit_spline(t, x):
+                control_points = bezier.adapt_c0_bezier(x)
+                return bezier.BezierSpline(t, control_points, loop_index)
+        else:
+            def fit_spline(t, x):
+                return bezier.BezierSpline(t, x, loop_index)
 
     # Initialize multipliers
     if equality_fn is null_fn_:
@@ -92,23 +96,15 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
 
         # Evaluate dual and gradients
         spline = fit_spline(t, x)
-        dual_old = dual(spline, cost_fn, c, equality_fn,
-                        eq_multipliers, inequality_fn, ineq_multipliers)
-        print(dual_old)
-        dual_old.backward()
-        dx = x.grad
-        if equality_fn is null_fn_:
-            deq_mult = torch.zeros(1)
-        else:
-            deq_mult = eq_multipliers.grad
-        if inequality_fn is null_fn_:
-            dineq_mult = torch.zeros(1)
-        else:
-            dineq_mult = ineq_multipliers.grad
+        dx, deq_mult, dineq_mult = torch.autograd.grad(dual(spline, cost_fn, c, equality_fn,
+                                                            eq_multipliers, inequality_fn, ineq_multipliers), [x, eq_multipliers, ineq_multipliers])
+        torch.clip_(dx, -max_grad, max_grad)
+        torch.clip_(deq_mult, -max_grad, max_grad)
+        torch.clip_(dineq_mult, -max_grad, max_grad)
 
         # Backtracking line search to find the next x & multipliers
-        m = merit(spline, eq_multipliers, ineq_multipliers,
-                  dx, deq_mult, dineq_mult, gamma, c)
+        m = merit(spline, cost_fn, c, equality_fn, eq_multipliers, inequality_fn, ineq_multipliers,
+                  dx, deq_mult, dineq_mult, gamma)
         alpha = max_alpha
         x_test = x - alpha * dx
         eq_mult_test = eq_multipliers + alpha * deq_mult
@@ -120,10 +116,13 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
                  eq_mult_test, inequality_fn, ineq_mult_test),
             [x_test, eq_mult_test, ineq_mult_test]
         )
+        torch.clip_(dx_test, -max_grad, max_grad)
+        torch.clip_(deq_test, -max_grad, max_grad)
+        torch.clip_(dineq_test, -max_grad, max_grad)
+
         grad_norm = torch.norm(
             dx) ** 2 + torch.norm(deq_mult) ** 2 + torch.norm(dineq_mult) ** 2
-        # grad_norm = torch.norm(torch.cat([dx, deq_mult, dineq_mult])) ** 2
-        while m - merit(spline_test, eq_mult_test, ineq_mult_test, dx_test, deq_test, dineq_test, gamma, c) < alpha * grad_norm * 0.125 \
+        while m - merit(spline_test, cost_fn, c, equality_fn, eq_mult_test, inequality_fn, ineq_mult_test, dx_test, deq_test, dineq_test, gamma) < alpha * grad_norm * 0.125 \
                 and alpha > min_alpha:
             alpha *= 0.5
 
@@ -137,10 +136,14 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
                      eq_mult_test, inequality_fn, ineq_mult_test),
                 [x_test, eq_mult_test, ineq_mult_test]
             )
-        print(merit(spline_test, eq_mult_test, ineq_mult_test, dx_test, deq_test, dineq_test, gamma, c))
+
+            torch.clip_(dx_test, -max_grad, max_grad)
+            torch.clip_(deq_test, -max_grad, max_grad)
+            torch.clip_(dineq_test, -max_grad, max_grad)
+
         if alpha <= min_alpha:
             # BLS failed, step constraint violation penalty
-            c *= 1.1
+            c *= 1.5
             if c > max_c:
                 break
         else:

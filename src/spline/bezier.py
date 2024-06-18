@@ -98,9 +98,17 @@ class BezierSpline:
         return result
 
 
+def adapt_c0_bezier(control_points):
+    # control_points: tensor (..., length + 1, order, channels)
+    # Appends an additional control point to each curve to ensure c0 continuity
+    # through knots.
+    return torch.cat([control_points[..., :-1, :, :],
+                      control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
+
+
 def adapt_c1_bezier(control_points):
     # control_points: tensor (..., length + 1, order - 1, channels)
-    # Appends an additional control point to each curve to ensure c1 continuity
+    # Appends two additional control points to each curve to ensure c1 continuity
     # through knots.
     diffs = (2 * control_points[..., 1:, -2,
                                 :] - control_points[..., 1:, -1, :])
@@ -114,6 +122,8 @@ def c0_violation(spline):
 
 
 def c1_violation(spline):
+    # return torch.sum(torch.square((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
+    #                               (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :])))
     return torch.norm((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
                       (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :]))
 
