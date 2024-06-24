@@ -126,16 +126,16 @@ def adapt_c1_bezier(control_points, loop_index=None):
         return torch.cat([control_points, diffs.unsqueeze(-2), next_points.unsqueeze(-2)], dim=-2)
 
 
-def c0_violation(spline, loop_index=None):
+def c0_violation(spline):
     return torch.norm(spline.control_points[..., 1:, 0, :] - spline.control_points[..., :-1, -1, :])
 
 
-def c1_violation(spline, loop_index=None):
+def c1_violation(spline):
     violation = torch.norm((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
                            (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :]))
-    if loop_index is not None:
+    if spline.loop_index is not None:
         # Should we work this calculation into the previous norm?
-        return violation + torch.norm((spline.control_points[..., loop_index, 1, :] - spline.control_points[..., loop_index, 0, :]) -
+        return violation + torch.norm((spline.control_points[..., spline.loop_index, 1, :] - spline.control_points[..., spline.loop_index, 0, :]) -
                                       (spline.control_points[..., -1, -1, :] -
                                        spline.control_points[..., -1, -2, :]))
 

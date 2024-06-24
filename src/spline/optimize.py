@@ -54,6 +54,10 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
 
     data = {}
     x_traj = []
+    cost_traj = []
+    eq_viol_traj = []
+    ineq_viol_traj = []
+    dual_traj = []
 
     # Set spline type
     if spline_type == "cubic":
@@ -78,7 +82,8 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
         if violation.dim() != 1:
             raise ValueError(
                 "equality_fn should return a 1d tensor, instead tensor has shape ", violation.shape)
-        eq_multipliers = torch.zeros(violation.shape, device=x.device, requires_grad=True)
+        eq_multipliers = torch.zeros(
+            violation.shape, device=x.device, requires_grad=True)
 
     if inequality_fn is null_fn_:
         ineq_multipliers = torch.zeros(1, requires_grad=True)
@@ -87,12 +92,12 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
         if violation.dim() != 1:
             raise ValueError(
                 "inequality_fn should return a 1d tensor, instead tensor hasa shape ", violation.shape)
-        ineq_multipliers = torch.zeros(violation.shape, device=x.device, requires_grad=True)
+        ineq_multipliers = torch.zeros(
+            violation.shape, device=x.device, requires_grad=True)
 
     x.requires_grad_(True)
 
     for i in range(max_iters):
-        x_traj += [x.detach().cpu().numpy().copy()]
 
         # Evaluate dual and gradients
         spline = fit_spline(t, x)
@@ -156,5 +161,16 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
                 # clamp
                 ineq_multipliers[ineq_multipliers < 0] = 0
 
+        x_traj += [x.detach().cpu().numpy().copy()]
+        cost_traj += [cost_fn(spline)]
+        eq_viol_traj += [eq_multipliers.detach().cpu().numpy().copy()]
+        ineq_viol_traj += [ineq_mult_test.detach().cpu().numpy().copy()]
+        dual_traj += [dual(spline, cost_fn, c, equality_fn,
+                           eq_multipliers, inequality_fn, ineq_multipliers).item()]
+
     data["x_traj"] = np.stack(x_traj)
+    data["cost_traj"] = np.stack(cost_traj)
+    data["eq_viol_traj"] = np.stack(eq_viol_traj)
+    data["ineq_viol_traj"] = np.stack(ineq_viol_traj)
+    data["dual_traj"] = np.stack(dual_traj)
     return x, eq_multipliers, ineq_multipliers, data

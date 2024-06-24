@@ -92,14 +92,14 @@ class BezierTestCase(unittest.TestCase):
             loop_pos[:, 0] - loop_pos[:, 1]).detach().cpu().item(), 0, 4)
 
         self.assertAlmostEqual(bezier.c0_violation(
-            spline, loop_index=loop_index).detach().cpu().item(), 0)
+            spline).detach().cpu().item(), 0)
 
         # Spline is continuously differentiable
         self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
             times[1:-1]) - spline.velocity(times[1:-1] - 0.000001)).detach().cpu().item(), 0, 2)
 
         self.assertAlmostEqual(bezier.c1_violation(
-            spline, loop_index=loop_index).detach().cpu().item(), 0, 4)
+            spline).detach().cpu().item(), 0, 4)
 
         # Spline velocity matches in loop
         loop_vel = spline.velocity(loop_times)
