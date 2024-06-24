@@ -71,6 +71,41 @@ class BezierTestCase(unittest.TestCase):
         self.assertAlmostEqual(bezier.c1_violation(
             spline).detach().cpu().item(), 0, 4)
 
+    def test_looping_spline(self):
+        x = torch.rand([5, 6, 2, 3], device=self.device) * 10
+        loop_index = 3
+        control_points = bezier.adapt_c1_bezier(x, loop_index=loop_index)
+        t = torch.tensor(4, device=self.device)
+        times = torch.linspace(0, 4, 7, device=self.device)
+
+        spline = bezier.BezierSpline(t, control_points, loop_index)
+
+        # Spline is continuous
+        self.assertAlmostEqual(torch.linalg.norm(
+            spline.position(times[1:-1] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 2)
+
+        # Spline loops
+        loop_times = torch.tensor(
+            [loop_index * 4. / 6, 4.], device=self.device)
+        loop_pos = spline.position(loop_times)
+        self.assertAlmostEqual(torch.linalg.norm(
+            loop_pos[:, 0] - loop_pos[:, 1]).detach().cpu().item(), 0, 4)
+
+        self.assertAlmostEqual(bezier.c0_violation(
+            spline, loop_index=loop_index).detach().cpu().item(), 0)
+
+        # Spline is continuously differentiable
+        self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
+            times[1:-1]) - spline.velocity(times[1:-1] - 0.000001)).detach().cpu().item(), 0, 2)
+
+        self.assertAlmostEqual(bezier.c1_violation(
+            spline, loop_index=loop_index).detach().cpu().item(), 0, 4)
+
+        # Spline velocity matches in loop
+        loop_vel = spline.velocity(loop_times)
+        self.assertAlmostEqual(torch.linalg.norm(
+            loop_vel[:, 0] - loop_vel[:, 1]).detach().cpu().item(), 0, 4)
+
     def test_nonuniform_noncubic_spline(self):
         # 5 splines, 2 segments, 7 points per curve, 3 dimensional
         x = torch.rand([5, 3, 5, 3], device=self.device) * 10
