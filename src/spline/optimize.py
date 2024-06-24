@@ -71,14 +71,14 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
 
     # Initialize multipliers
     if equality_fn is null_fn_:
-        eq_multipliers = torch.zeros(1, requires_grad=True)
+        eq_multipliers = torch.zeros(1, device=x.device, requires_grad=True)
     else:
         # get shape of multipliers
         violation = equality_fn(fit_spline(t, x))
         if violation.dim() != 1:
             raise ValueError(
                 "equality_fn should return a 1d tensor, instead tensor has shape ", violation.shape)
-        eq_multipliers = torch.zeros(violation.shape, requires_grad=True)
+        eq_multipliers = torch.zeros(violation.shape, device=x.device, requires_grad=True)
 
     if inequality_fn is null_fn_:
         ineq_multipliers = torch.zeros(1, requires_grad=True)
@@ -87,7 +87,7 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
         if violation.dim() != 1:
             raise ValueError(
                 "inequality_fn should return a 1d tensor, instead tensor hasa shape ", violation.shape)
-        ineq_multipliers = torch.zeros(violation.shape, requires_grad=True)
+        ineq_multipliers = torch.zeros(violation.shape, device=x.device, requires_grad=True)
 
     x.requires_grad_(True)
 
