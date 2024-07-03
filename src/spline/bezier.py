@@ -16,6 +16,8 @@ class BezierSpline:
         self.t_diffs = self.t[1:] - self.t[:-1]
         self.control_points = control_points
 
+        self.device = control_points.device
+
         self.d_control_points = (self.control_points.shape[-2] - 1) * (
             self.control_points[..., 1:, :] - self.control_points[..., :-1, :])
         self.d2_control_points = (self.control_points.shape[-2] - 2) * (
@@ -101,8 +103,14 @@ def adapt_c0_bezier(control_points, loop_index=None):
     # control_points: tensor (..., length + 1, order, channels)
     # Appends an additional control point to each curve to ensure c0 continuity
     # through knots.
-    return torch.cat([control_points[..., :-1, :, :],
-                      control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
+    if loop_index is None:
+        return torch.cat([control_points[..., :-1, :, :],
+                          control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
+    else:
+        return torch.cat([control_points,
+                          torch.cat([control_points[..., 1:, 0, :], control_points[...,
+                                                                                   loop_index, 0, :].unsqueeze(-2)], dim=-2).unsqueeze(-2),
+                          ], dim=-2)
 
 
 def adapt_c1_bezier(control_points, loop_index=None):
@@ -130,11 +138,22 @@ def c0_violation(spline):
     return torch.norm(spline.control_points[..., 1:, 0, :] - spline.control_points[..., :-1, -1, :])
 
 
-def c1_violation(spline):
+def c1_violation(spline, verbose=False):
     violation = torch.norm((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
                            (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :]))
     if spline.loop_index is not None:
         # Should we work this calculation into the previous norm?
+        loop_violation = torch.norm((spline.control_points[..., spline.loop_index, 1, :] - spline.control_points[..., spline.loop_index, 0, :]) -
+                                    (spline.control_points[..., -1, -1, :] -
+                                     spline.control_points[..., -1, -2, :]))
+
+        if verbose:
+            print("Violation: ", violation)
+            print((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
+                  (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :]))
+
+            print("Loop violation: ", loop_violation)
+
         return violation + torch.norm((spline.control_points[..., spline.loop_index, 1, :] - spline.control_points[..., spline.loop_index, 0, :]) -
                                       (spline.control_points[..., -1, -1, :] -
                                        spline.control_points[..., -1, -2, :]))

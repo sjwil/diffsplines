@@ -135,6 +135,7 @@ class CubicSpline:
         self.c = c
         self.d = d
         self.loop_index = loop_index
+        self.device = a.device
         if self.loop_index is not None:
             self.loop_t = (t - t[loop_index])[loop_index:]
 
