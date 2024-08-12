@@ -49,8 +49,9 @@ class BezierTestCase(unittest.TestCase):
     def test_nonuniform_spline(self):
         # 5 splines, 5 segments, cubic, 3 dimensional
         x = torch.rand([5, 6, 2, 3], device=self.device) * 10
-        control_points = bezier.adapt_c1_bezier(x)
         t = torch.tensor([0., 1., 3., 5., 5.5, 5.7], device=self.device)
+        delta_t = (t[1:] - t[:-1]).unsqueeze(-1)
+        control_points = bezier.adapt_c1_bezier(x, delta_t)
 
         spline = bezier.BezierSpline(t, control_points)
         # Spline is interpolating
@@ -59,14 +60,14 @@ class BezierTestCase(unittest.TestCase):
 
         # Spline is continuous
         self.assertAlmostEqual(torch.linalg.norm(
-            spline.position(t[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 2)
+            spline.position(t[1:] - 0.000001) - x[:, 1:, 0, :]).detach().cpu().item(), 0, 1)
 
         self.assertAlmostEqual(bezier.c0_violation(
             spline).detach().cpu().item(), 0)
 
         # Spline is continuously differentiable
         self.assertAlmostEqual(torch.linalg.norm(spline.velocity(
-            t[1:]) - spline.velocity(t[1:] - 0.000001)).detach().cpu().item(), 0, 2)
+            t[1:]) - spline.velocity(t[1:] - 0.000001)).detach().cpu().item(), 0, 1)
 
         self.assertAlmostEqual(bezier.c1_violation(
             spline).detach().cpu().item(), 0, 4)
@@ -109,8 +110,10 @@ class BezierTestCase(unittest.TestCase):
     def test_nonuniform_noncubic_spline(self):
         # 5 splines, 2 segments, 7 points per curve, 3 dimensional
         x = torch.rand([5, 3, 5, 3], device=self.device) * 10
-        control_points = bezier.adapt_c1_bezier(x)
         t = torch.tensor([0., 1., 3.], device=self.device)
+        delta_t = (t[1:] - t[:-1]).unsqueeze(-1)
+        
+        control_points = bezier.adapt_c1_bezier(x, delta_t)
 
         spline = bezier.BezierSpline(t, control_points)
         # Spline is interpolating

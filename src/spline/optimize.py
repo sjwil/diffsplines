@@ -195,6 +195,8 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
 
     # constraint violation penalty
     c = kwargs.get("c", 1.)
+    # constraint scaling
+    c_scaling = kwargs.get("c_scaling", 3.)
     # Maximum constraint violation penalty, used as stopping criteria
     max_c = kwargs.get("max_c", 1e2)
     # Maximum step size
@@ -218,6 +220,7 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
     eq_viol_traj = []
     ineq_viol_traj = []
     dual_traj = []
+    alpha_traj = []
 
     # Set spline type
     if spline_type == "cubic":
@@ -265,6 +268,8 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
     # Hessian w.r.t. x
     h = torch.func.hessian(eval_dual, argnums=1)
     I = torch.eye(x.flatten().shape[0], device=x.device) * regularization
+    # TEMP
+    alpha = max_alpha
 
     for i in range(max_iters):
         # Evaluate dual and gradients
@@ -281,6 +286,7 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
         
         # Backtracking line search to find the next x & multipliers
         m = grad_l2_norm(dx)
+        # TEMP
         alpha = max_alpha
         x_test = x - alpha * d
         spline_test = fit_spline(t, x_test)
@@ -312,19 +318,22 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
             if alpha <= min_alpha:
                 eq_multipliers += c * equality_fn(spline)
                 ineq_multipliers += c * inequality_fn(spline)
-                c *= 3
+                c *= c_scaling
                 # Clamp
                 ineq_multipliers[ineq_multipliers < 0] = 0
+                # TEMP
+                # alpha = max_alpha
             # Step x
             else:
                 x -= alpha * d
+                # alpha *= 2
         x_traj += [x.detach().cpu().numpy().copy()]
         cost_traj += [cost_fn(spline).item()]
-        eq_viol_traj += [eq_multipliers.detach().cpu().numpy().copy()]
-        ineq_viol_traj += [ineq_multipliers.detach().cpu().numpy().copy()]
+        eq_viol_traj += [equality_fn(spline).detach().cpu().numpy().copy()]
+        ineq_viol_traj += [inequality_fn(spline).detach().cpu().numpy().copy()]
         dual_traj += [dual(spline, cost_fn, c, equality_fn,
                            eq_multipliers, inequality_fn, ineq_multipliers).item()]
-        
+        alpha_traj += [alpha]
         if c >= max_c:
             break
 
@@ -333,4 +342,5 @@ def optimize_spline(t, x, cost_fn, spline_type="cubic", equality_fn=null_fn_, in
     data["eq_viol_traj"] = np.stack(eq_viol_traj)
     data["ineq_viol_traj"] = np.stack(ineq_viol_traj)
     data["dual_traj"] = np.stack(dual_traj)
+    data["alpha_traj"] = np.stack(alpha_traj)
     return x, eq_multipliers, ineq_multipliers, data

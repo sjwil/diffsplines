@@ -12,24 +12,26 @@ from . import bezier
 
 def plot_2d_trajectory(coeffs, ax=None, points=200, **kwargs):
     t, a, b, c, d = coeffs
+    linewidth = kwargs.pop("linewidth", 1)
     eval_t = torch.linspace(t[0], t[-1], points, device=t.device)
     spline = cubic.CubicSpline(coeffs, **kwargs)
     trajectory = spline.position(eval_t).detach().cpu().numpy()
 
     if ax is not None:
-        ax.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+        ax.plot(trajectory[..., :, 0], trajectory[..., :, 1], linewidth=linewidth, c="blue")
     else:
-        plt.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+        plt.plot(trajectory[..., :, 0], trajectory[..., :, 1], linewidth=linewidth, c="blue")
 
 
 def plot_2d_bezier(t, control_points, ax=None, points=200, **kwargs):
     eval_t = torch.linspace(t[0], t[-1], points, device=t.device)
+    linewidth = kwargs.pop("linewidth", 1)
     spline = bezier.BezierSpline(t, control_points, **kwargs)
     trajectory = spline.position(eval_t).detach().cpu().numpy()
     if ax is not None:
-        ax.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+        ax.plot(trajectory[..., :, 0], trajectory[..., :, 1], linewidth=linewidth, c="blue")
     else:
-        plt.plot(trajectory[..., :, 0], trajectory[..., :, 1])
+        plt.plot(trajectory[..., :, 0], trajectory[..., :, 1], linewidth=linewidth, c="blue")
 
 
 def generate_figure(coeffs, t, plot_idx, axes, goals=None, circleRadius=None, **kwargs):

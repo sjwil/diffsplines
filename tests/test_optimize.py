@@ -15,7 +15,7 @@ class OptimizeTestCase(unittest.TestCase):
     def test_bezier_opt(self):
         # Random points, bezier spline will not be c1
         x = torch.rand([5, 6, 3, 3], device=self.device) * 10
-        t = torch.tensor([5.], device=self.device)
+        t = torch.tensor(5., device=self.device)
 
         control_points = bezier.adapt_c0_bezier(x)
         spline = bezier.BezierSpline(t, control_points)

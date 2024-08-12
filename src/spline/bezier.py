@@ -14,13 +14,16 @@ class BezierSpline:
         else:
             self.t = t
         self.t_diffs = self.t[1:] - self.t[:-1]
+        self.t_diffs_recip = 1 / self.t_diffs
+        self.t_diffs_recip_sq = self.t_diffs_recip ** 2
+
         self.control_points = control_points
 
         self.device = control_points.device
 
-        self.d_control_points = (self.control_points.shape[-2] - 1) * (
+        self.d_control_points = (self.control_points.shape[-2] - 1) * (self.t_diffs_recip.unsqueeze(-1).unsqueeze(-1)) * (
             self.control_points[..., 1:, :] - self.control_points[..., :-1, :])
-        self.d2_control_points = (self.control_points.shape[-2] - 2) * (
+        self.d2_control_points = (self.control_points.shape[-2] - 2) * (self.t_diffs_recip_sq.unsqueeze(-1).unsqueeze(-1)) * (
             self.d_control_points[..., 1:, :] - self.d_control_points[..., :-1, :])
 
         self.k = torch.tensor(
@@ -37,7 +40,15 @@ class BezierSpline:
         self.vel_binom = torch_binomial(self.k - 1, self.i_[:-1])
         self.acc_binom = torch_binomial(self.k - 2, self.i_[:-2])
 
+        self.times_cache = None
+        self.fractional_cache = None
+        self.index_cache = None
+
     def _times_to_indices(self, times):
+        # Check cache
+        if self.times_cache is not None and torch.equal(self.times_cache, times):
+            return self.fractional_cache, self.index_cache
+
         index = torch.bucketize(times, self.t, right=True) - 1
 
         if self.loop_index is not None:
@@ -59,6 +70,11 @@ class BezierSpline:
             # How far are we in the current loop
             fractional_part[lasso_indices] = (
                 (times[lasso_indices] - self.t[-1]) % self.loop_t[-1]) - self.loop_t[loop_index[lasso_indices]]
+
+        # Set cache
+        self.times_cache = times
+        self.fractional_cache = fractional_part
+        self.index_cache = index
         return fractional_part, index
 
     def position(self, times):
@@ -113,20 +129,33 @@ def adapt_c0_bezier(control_points, loop_index=None):
                           ], dim=-2)
 
 
-def adapt_c1_bezier(control_points, loop_index=None):
+def adapt_c1_bezier(control_points, delta_t=None, loop_index=None):
     # control_points: tensor (..., length + 1, order - 1, channels)
     # Appends two additional control points to each curve to ensure c1 continuity
     # through knots.
+    if delta_t is None:
+        delta_t = torch.ones(
+            control_points.shape[-3], device=control_points.device).unsqueeze(-1)
+
+    else:
+        delta_t = torch.cat([delta_t, delta_t[-1].unsqueeze(0)], dim=0)
+
     if loop_index is None:
-        diffs = (2 * control_points[..., 1:, -2,
-                                    :] - control_points[..., 1:, -1, :])
+        diffs = control_points[..., 1:, -2, :] + delta_t[:-1] / delta_t[1:] * (control_points[..., 1:, -2,
+                                                                                              :] - control_points[..., 1:, -1, :])
         # create (..., length, order, channels) shape for full representation.
         return torch.cat([control_points[..., :-1, :, :], diffs.unsqueeze(-2),
                           control_points[..., 1:, 0, :].unsqueeze(-2)], dim=-2)
 
     else:
-        diffs = torch.cat([(2 * control_points[..., 1:, -2, :] - control_points[..., 1:, -1, :]),
-                           (2 * control_points[..., loop_index, -2, :] - control_points[..., loop_index, -1, :]).unsqueeze(-2)], dim=-2)
+        diffs = torch.cat([control_points[..., 1:, -2, :] + delta_t[:-1] / delta_t[1:] * (control_points[..., 1:, -2,
+                                                                                                         :] - control_points[..., 1:, -1, :]),
+                           (control_points[..., loop_index, -2, :] + delta_t[-1] / delta_t[loop_index] *
+                            (control_points[..., loop_index, -2, :] -
+                               control_points[..., loop_index, -1, :])).unsqueeze(-2)], dim=-2)
+
+        # diffs = torch.cat([(2 * control_points[..., 1:, -2, :] - control_points[..., 1:, -1, :]),
+        #                    (2 * control_points[..., loop_index, -2, :] - control_points[..., loop_index, -1, :]).unsqueeze(-2)], dim=-2)
         # create (..., length + 1, order, channels) shape for full representation.
         next_points = torch.cat(
             [control_points[..., 1:, 0, :], control_points[..., loop_index, 0, :].unsqueeze(-2)], dim=-2)
@@ -139,8 +168,11 @@ def c0_violation(spline):
 
 
 def c1_violation(spline, verbose=False):
-    violation = torch.norm((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
-                           (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :]))
+
+    violation = torch.norm(
+        spline.d_control_points[..., 1:, 0, :] - spline.d_control_points[..., :-1, -1, :])
+    # violation = torch.norm((spline.control_points[..., 1:, 1, :] - spline.control_points[..., 1:, 0, :]) -
+    #                        (spline.control_points[..., :-1, -1, :] - spline.control_points[..., :-1, -2, :]))
     if spline.loop_index is not None:
         # Should we work this calculation into the previous norm?
         loop_violation = torch.norm((spline.control_points[..., spline.loop_index, 1, :] - spline.control_points[..., spline.loop_index, 0, :]) -
