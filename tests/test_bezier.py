@@ -106,6 +106,17 @@ class BezierTestCase(unittest.TestCase):
         loop_vel = spline.velocity(loop_times)
         self.assertAlmostEqual(torch.linalg.norm(
             loop_vel[:, 0] - loop_vel[:, 1]).detach().cpu().item(), 0, 4)
+        
+        pos = spline.position(times)
+        acc = spline.acceleration(times)
+        jerk = spline.jerk(times)
+        snap = spline.snap(times)
+        
+        # Ensure acceleration, jerk, and snap return the correct shapes
+        self.assertSequenceEqual(pos.shape, acc.shape)
+        self.assertSequenceEqual(pos.shape, jerk.shape)
+        self.assertSequenceEqual(pos.shape, snap.shape)
+
 
     def test_nonuniform_noncubic_spline(self):
         # 5 splines, 2 segments, 7 points per curve, 3 dimensional

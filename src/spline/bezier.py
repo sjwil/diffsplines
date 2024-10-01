@@ -8,6 +8,9 @@ class BezierSpline:
         # control_points: tensor (..., length + 1, order + 1, channels).
         # Currently assumes order >= 3. This class constructs C^0 bezier splines
         # so control_points does not need to provide the last point per curve.
+        # length: Number of segments
+        # order: Number of control points per segment, also determines the number of derivatives we can take
+        # channels: Number of splines
         if t.dim() == 0:
             self.t = torch.linspace(
                 0, t, control_points.shape[-3] + 1, device=control_points.device)
@@ -16,15 +19,23 @@ class BezierSpline:
         self.t_diffs = self.t[1:] - self.t[:-1]
         self.t_diffs_recip = 1 / self.t_diffs
         self.t_diffs_recip_sq = self.t_diffs_recip ** 2
+        self.t_diffs_recip_cube = self.t_diffs_recip ** 3
+        self.t_diffs_recip_quad = self.t_diffs_recip ** 4
 
         self.control_points = control_points
-
         self.device = control_points.device
 
+        # Control points of the derivatives of the spline are related to the control points of the spline
         self.d_control_points = (self.control_points.shape[-2] - 1) * (self.t_diffs_recip.unsqueeze(-1).unsqueeze(-1)) * (
             self.control_points[..., 1:, :] - self.control_points[..., :-1, :])
         self.d2_control_points = (self.control_points.shape[-2] - 2) * (self.t_diffs_recip_sq.unsqueeze(-1).unsqueeze(-1)) * (
             self.d_control_points[..., 1:, :] - self.d_control_points[..., :-1, :])
+        self.d3_control_points = (self.control_points.shape[-2] - 3) * (self.t_diffs_recip_cube.unsqueeze(-1).unsqueeze(-1)) * (
+            self.d2_control_points[..., 1:, :] - self.d2_control_points[..., :-1, :])
+        self.d4_control_points = (self.control_points.shape[-2] - 4) * (self.t_diffs_recip_quad.unsqueeze(-1).unsqueeze(-1)) * (
+            self.d3_control_points[..., 1:, :] - self.d3_control_points[..., :-1, :])
+        self.order_control_points = [self.control_points, self.d_control_points,
+                                     self.d2_control_points, self.d3_control_points, self.d4_control_points]
 
         self.k = torch.tensor(
             self.control_points.shape[-2] - 1, device=control_points.device)
@@ -39,6 +50,10 @@ class BezierSpline:
         self.pos_binom = torch_binomial(self.k, self.i_)
         self.vel_binom = torch_binomial(self.k - 1, self.i_[:-1])
         self.acc_binom = torch_binomial(self.k - 2, self.i_[:-2])
+        self.jerk_binom = torch_binomial(self.k - 3, self.i_[:-3])
+        self.snap_binom = torch_binomial(self.k - 4, self.i_[:-4])
+        self.order_binom_coeffs = [self.pos_binom, self.vel_binom,
+                                   self.acc_binom, self.jerk_binom, self.snap_binom]
 
         self.times_cache = None
         self.fractional_cache = None
@@ -77,43 +92,40 @@ class BezierSpline:
         self.index_cache = index
         return fractional_part, index
 
-    def position(self, times):
+    def _times_to_scaled_indices(self, times):
         fractional_part, index = self._times_to_indices(times)
         fractional_part = (fractional_part / self.t_diffs[index]).unsqueeze(-1)
-        # times x order + 1
-        res = self.pos_binom * \
-            torch.pow(1 - fractional_part, self.k - self.i_) * \
-            torch.pow(fractional_part, self.i_)
+        return fractional_part, index
 
-        res = res.unsqueeze(-1)
-        result = torch.sum(self.control_points[..., index, :, :] * res, dim=-2)
+    def _compute_b_polynomial(self, fractional_part, index, order):
+        # Evaluate bernstein polynomial of the correct order
+        terms = self.order_binom_coeffs[order] * \
+            torch.pow(1 - fractional_part, self.k - self.i_[order:]) * \
+            torch.pow(fractional_part, self.i_[
+                      :-order] if order > 0 else self.i_)
+        terms = terms.unsqueeze(-1)
+        result = torch.sum(self.order_control_points[order][..., index, :, :] * terms, dim=-2)
         return result
+
+    def compute_spline(self, times, order):
+        # Evaluate the order-th derivative of the spline at the given times
+        fractional_part, index = self._times_to_scaled_indices(times)
+        return self._compute_b_polynomial(fractional_part, index, order)
+
+    def position(self, times):
+        return self.compute_spline(times, 0)
 
     def velocity(self, times):
-        fractional_part, index = self._times_to_indices(times)
-        fractional_part = (fractional_part / self.t_diffs[index]).unsqueeze(-1)
-
-        res = self.vel_binom * \
-            torch.pow(1 - fractional_part, self.k - self.i_[1:]) * \
-            torch.pow(fractional_part, self.i_[:-1])
-        res = res.unsqueeze(-1)
-        result = torch.sum(
-            self.d_control_points[..., index, :, :] * res, dim=-2)
-        return result
-
+        return self.compute_spline(times, 1)
+    
     def acceleration(self, times):
-        fractional_part, index = self._times_to_indices(times)
-        fractional_part = (fractional_part / self.t_diffs[index]).unsqueeze(-1)
+        return self.compute_spline(times, 2)
 
-        res = self.acc_binom * \
-            torch.pow(1 - fractional_part, self.k - self.i_[2:]) * \
-            torch.pow(fractional_part, self.i_[:-2])
+    def jerk(self, times):
+        return self.compute_spline(times, 3)
 
-        res = res.unsqueeze(-1)
-        result = torch.sum(
-            self.d2_control_points[..., index, :, :] * res, dim=-2)
-        return result
-
+    def snap(self, times):
+        return self.compute_spline(times, 4)
 
 def adapt_c0_bezier(control_points, loop_index=None):
     # control_points: tensor (..., length + 1, order, channels)
